@@ -1,0 +1,67 @@
+*** Begin Patch
+*** Update File: src/phaser/PlaygroundScene.ts
+@@
+   private playClip(
+     id: string,
+     actor: PokemonActor,
+     clip: THREE.AnimationClip,
+     fadeDuration: number = 0.2,
+     loopIndefinitely: boolean = false
+   ) {
+     const mixer = actor.mixer
+     const nextAction = mixer.clipAction(clip)
+     const currentAction = this.activeAnimationActions.get(id)
+-
+-    // Restart the current action if it's the same clip
+-    if (currentAction === nextAction) {
+-      nextAction.reset().play()
+-      mixer.update(1 / 300)
+-      return
+-    }
+-
+-    if (loopIndefinitely) {
+-      nextAction.setLoop(THREE.LoopRepeat, Infinity)
+-    }
+-
+-    nextAction.reset()
+-    nextAction.enabled = true
+-
+-    if (currentAction) {
+-      nextAction.setEffectiveWeight(1)
+-      nextAction.play()
+-      currentAction.crossFadeTo(nextAction, fadeDuration, false)
+-    } else {
+-      nextAction.fadeIn(fadeDuration).play()
+-    }
+-
+-    this.activeAnimationActions.set(id, nextAction)
+-
+-    mixer.update(1 / 300)
++
++    const restartingSameClip = currentAction === nextAction
++
++    if (restartingSameClip) {
++      nextAction.reset().play()
++    } else {
++      if (loopIndefinitely) {
++        nextAction.setLoop(THREE.LoopRepeat, Infinity)
++      }
++
++      nextAction.reset()
++      nextAction.enabled = true
++
++      if (currentAction) {
++        nextAction.setEffectiveWeight(1)
++        nextAction.play()
++        currentAction.crossFadeTo(nextAction, fadeDuration, false)
++      } else {
++        nextAction.fadeIn(fadeDuration).play()
++      }
++
++      this.activeAnimationActions.set(id, nextAction)
++    }
++
++    mixer.update(1 / 300)
+   }
+ }
+*** End Patch

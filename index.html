@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#000000" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <title>3D Mobile</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        -webkit-tap-highlight-color: transparent;
+      }
+      
+
+  
+      
+      /* Optimización para rendimiento en mobile */
+      canvas {
+        display: block;
+        width: 100%;
+        height: auto;
+        max-width: 100%;
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      
+      /* Evitar el bounce excesivo en iOS */
+      body {
+        -webkit-overflow-scrolling: touch;
+      }
+      
+      /* Optimización para pantallas de alta densidad */
+      @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+        canvas {
+          image-rendering: -webkit-optimize-contrast;
+          image-rendering: crisp-edges;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

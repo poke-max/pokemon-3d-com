@@ -1,0 +1,41 @@
+* {
+  box-sizing: border-box;
+}
+
+:root {
+  font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  background: radial-gradient(circle at top, #1f2937, #0f172a 55%);
+  color: #f1f5f9;
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: transparent;
+}
+
+#root {
+  min-height: 100vh;
+  padding: 2rem 1rem 3rem;
+  display: flex;
+  justify-content: center;
+}
+
+.app-shell {
+  width: min(2000px, 100%);
+}
+
+button {
+  font-family: inherit;
+}
+
+/* En tu archivo CSS */
+.phaser-battle-container canvas {
+  image-rendering: -webkit-optimize-contrast; /* Safari */
+  image-rendering: crisp-edges; /* Firefox */
+  image-rendering: pixelated; /* Chrome */
+  
+  /* Si NO es pixel art, usa esto en su lugar: */
+  image-rendering: auto;
+  -webkit-font-smoothing: antialiased;
+}
