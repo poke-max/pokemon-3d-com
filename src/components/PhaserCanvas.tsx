@@ -257,6 +257,14 @@ const extractNameFromDescriptor = (value?: string | null) => {
 }
 
 
+const resolveSpeciesDisplayName = (speciesId: PokemonSpecies) => {
+  const key = speciesId.replace(/^0+/, '') || '0'
+  const name = POKEMON_NAME_BY_ID[key]?.[0]?.[1]
+  if (!name) return speciesId
+  return name.charAt(0).toUpperCase() + name.slice(1)
+}
+
+
 const normalizeSpeciesName = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, '')
 
 const ALL_AVAILABLE_SPECIES: PokemonSpecies[] = [
@@ -321,6 +329,8 @@ const buildSelectionForSpecies = (
 
   const moveList: string[] = Array.isArray(moves) ? moves : []
 
+  const nicknameValue = nickname || resolveSpeciesDisplayName(speciesId)
+
   return {
 
     id: speciesId,
@@ -333,7 +343,7 @@ const buildSelectionForSpecies = (
 
     transformation: 'normal',
 
-    nickname: nickname || speciesId,
+    nickname: nicknameValue,
 
     level: 50,
 
@@ -881,7 +891,11 @@ export function PhaserCanvas() {
 
       (backendTeams[slot] ?? []).map((selection) => {
 
-        const hp = createHpSnapshot(selection.id)
+        const hpFromRef = slotHealthRef.current[slot]
+
+        const hasHpRef = Number.isFinite(hpFromRef?.max) && (hpFromRef?.max ?? 0) > 0
+
+        const hp = hasHpRef ? hpFromRef : createHpSnapshot(selection.id)
 
         const maxHp = selection.maxHp ?? hp.max
 
@@ -905,11 +919,11 @@ export function PhaserCanvas() {
 
           maxHp,
 
-          currentHp: maxHp,
+          currentHp: hasHpRef ? clampHpValue(hp.current, maxHp) : maxHp,
 
           boosts: {},
 
-          status: null,
+          status: hasHpRef ? hp.status ?? null : null,
 
           battleState: null,
 
@@ -951,12 +965,20 @@ export function PhaserCanvas() {
 
     })
 
-    setSlotHealth({
+    setSlotHealth((current) => {
+      const next: Record<PokemonSlot, HpSnapshot> = { ...current }
 
-      p1: backendTeams.p1[0] ? createHpSnapshot(backendTeams.p1[0].id) : { current: 0, max: 0, status: null },
+      ;(['p1', 'p2'] as PokemonSlot[]).forEach((slot) => {
+        const existing = current[slot]
+        if (existing?.max && existing.max > 0) {
+          next[slot] = existing
+          return
+        }
+        const selection = backendTeams[slot]?.[0]
+        next[slot] = selection ? createHpSnapshot(selection.id) : { current: 0, max: 0, status: null }
+      })
 
-      p2: backendTeams.p2[0] ? createHpSnapshot(backendTeams.p2[0].id) : { current: 0, max: 0, status: null },
-
+      return next
     })
 
     rosterAppliedRef.current = true
@@ -1134,7 +1156,7 @@ export function PhaserCanvas() {
 
     const result: PokemonSpeciesMeta = {
       name: speciesId,
-      nickname: instance?.nickname || selection?.nickname || speciesId,
+      nickname: instance?.nickname || selection?.nickname || resolveSpeciesDisplayName(speciesId),
       level: instance?.level ?? selection?.level ?? 0,
       hp: {
         current: currentHp,
@@ -1188,6 +1210,11 @@ export function PhaserCanvas() {
         roster: Record<PokemonSlot, PokemonSpecies[]>
         movesBySlot?: Record<PokemonSlot, Record<string, string[]>>
       }) => {
+        const isSameTeam = (slot: PokemonSlot, next: PokemonSelection[]) => {
+          const current = backendTeamsRef.current[slot] ?? []
+          if (current.length !== next.length) return false
+          return current.every((entry, idx) => entry.id === next[idx]?.id)
+        }
         const buildTeam = (slot: PokemonSlot) =>
           (roster?.[slot] ?? []).map((species) =>
             buildSelectionForSpecies(
@@ -1200,6 +1227,9 @@ export function PhaserCanvas() {
         const nextTeams: Record<PokemonSlot, PokemonSelection[]> = {
           p1: buildTeam('p1'),
           p2: buildTeam('p2'),
+        }
+        if (isSameTeam('p1', nextTeams.p1) && isSameTeam('p2', nextTeams.p2)) {
+          return
         }
         rosterAppliedRef.current = false
         setBackendTeams(nextTeams)
