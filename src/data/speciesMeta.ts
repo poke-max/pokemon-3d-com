@@ -1,5 +1,3 @@
-import type { PokemonSpecies } from '../phaser/PlaygroundScene'
-
 export const STATUS_LABELS = {
   brn: 'burned',
   par: 'paralyzed',
@@ -30,7 +28,7 @@ export type PokemonSpeciesMeta = {
   stages?: Partial<Record<StatId, number>>
 }
 
-export const SPECIES_META: Record<PokemonSpecies, PokemonSpeciesMeta> = {
+export const SPECIES_META: Record<string, PokemonSpeciesMeta> = {
   '1012': {
     name: 'Meowscarada',
     nickname: 'Meowscarada',

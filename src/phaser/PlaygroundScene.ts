@@ -15,6 +15,7 @@ import type {
 import type { WeatherEffectType, WeatherEventPayload } from '../types/weather'
 import { POKEMON_NAME_BY_ID } from '../data/dataAssign'
 import { PokemonFxManager } from './PokemonFxManager'
+import { ShowdownBridge } from '../sim/ShowdownBridge'
 
 const P1_POKEMON_IDS = ['0025', '0006', '0725'] as const
 const P2_POKEMON_IDS = ['0445', '0920', '1097'] as const
@@ -120,11 +121,9 @@ const RARE_VARIANTS_BY_SLOT: Record<PokemonSlot, PokemonSpecies[]> = {
 }
 
 const buildSelectionsForSlot = (slot: PokemonSlot) =>
-  AVAILABLE_POKEMON_IDS_BY_SLOT[slot].flatMap((species) => {
-    const normal = buildSelection(slot, species, { isRare: false })
-    const rare = buildSelection(slot, species, { isRare: true })
+  AVAILABLE_POKEMON_IDS_BY_SLOT[slot].map((species) => {
     const preferRare = RARE_VARIANTS_BY_SLOT[slot]?.includes(species)
-    return preferRare ? [rare, normal] : [normal, rare]
+    return buildSelection(slot, species, { isRare: preferRare })
   })
 
 export const AVAILABLE_SELECTIONS_BY_SLOT: Record<PokemonSlot, PokemonSelection[]> = {
@@ -264,6 +263,7 @@ export class PlaygroundScene extends Scene3D {
   private activeWeatherType: WeatherEffectType | null = null
   private fx!: PokemonFxManager
   private debugStateTimer?: Phaser.Time.TimerEvent
+  private showdownBridge?: ShowdownBridge
   private readonly handleDebugStateRequest = () => this.emitDebugState()
   private readonly handleUiCameraUpdate = (payload: CameraUiUpdatePayload) => {
     const camera = this.third.camera as THREE.PerspectiveCamera
@@ -308,7 +308,7 @@ export class PlaygroundScene extends Scene3D {
     this.stageFxRunning[slot] = true
     this.game.events.emit('pokemon:stageFxStart', { slot, type: next })
     const promise = this.fx?.playStatChangeParticles(slot, next)
-    if (promise?.then) {
+    if (promise) {
       await promise
     }
     this.game.events.emit('pokemon:stageFxComplete', { slot, type: next })
@@ -556,17 +556,8 @@ export class PlaygroundScene extends Scene3D {
     })
 
     this.createGround()
-    const initialSelections = {
-      p1: await this.resolveInitialSelection('p1'),
-      p2: await this.resolveInitialSelection('p2'),
-    }
 
-    await Promise.all([
-      this.spawnPokemon('p1', this.currentSpeciesBySlot.p1, false, this.currentVariantBySlot.p1, initialSelections.p1.selectionId),
-      this.spawnPokemon('p2', this.currentSpeciesBySlot.p2, false, this.currentVariantBySlot.p2, initialSelections.p2.selectionId),
-    ])
-
-    // Configurar cÃ¡mara con altura dinÃ¡mica basada en p1
+    // Configurar c�mara con altura din�mica basada en p1
     const p1Actor = this.pokemonActors.get('p1')
     const dynamicHeight = p1Actor ? p1Actor.height *0.3 : 0.4
 
@@ -588,6 +579,20 @@ export class PlaygroundScene extends Scene3D {
     this.game.events.on('pokemon:hpDelta', this.handleHpDeltaEvent)
     this.game.events.on('battle:weather', this.handleWeatherEvent)
 
+    this.showdownBridge = new ShowdownBridge({
+      eventBus: this.game.events,
+      availableSpecies: [...AVAILABLE_POKEMON_IDS],
+    })
+    if (typeof window !== 'undefined') {
+      ;(window as any).showdownBridge = {
+        start: (teams?: any) => this.showdownBridge?.startSession(teams),
+        attach: (id: string) => this.showdownBridge?.attachToSession(id),
+        command: (command: string) => this.showdownBridge?.sendCommand(command),
+        move: (moveName: string) => this.showdownBridge?.sendMoveByName(moveName),
+        stop: () => this.showdownBridge?.stop(),
+      }
+    }
+
     this.debugStateTimer = this.time.addEvent({
       delay: 250,
       loop: true,
@@ -607,6 +612,7 @@ export class PlaygroundScene extends Scene3D {
       this.game.events.off('pokemon:stageChange', this.handleStageChangeEvent)
       this.game.events.off('pokemon:hpDelta', this.handleHpDeltaEvent)
       this.game.events.off('battle:weather', this.handleWeatherEvent)
+      this.showdownBridge?.stop()
       this.debugStateTimer?.remove(false)
       this.debugStateTimer = undefined
       this.stopCameraShake()
@@ -694,28 +700,6 @@ export class PlaygroundScene extends Scene3D {
     const data = { scene: gltf.scene, animations: gltf.animations ?? [], parser: gltf.parser }
     this.modelCache.set(key, data)
     return data
-  }
-
-  private async resolveInitialSelection(slot: PokemonSlot): Promise<PokemonSelection> {
-    const candidates = AVAILABLE_SELECTIONS_BY_SLOT[slot]
-    const tried = new Set<PokemonSpecies>()
-    for (const selection of candidates) {
-      if (tried.has(selection.id)) continue
-      tried.add(selection.id)
-      try {
-        await this.loadModel(selection.id)
-        this.currentSpeciesBySlot[slot] = selection.id
-        this.currentVariantBySlot[slot] = this.getDefaultVariantFor(selection.id, slot)
-        this.setSelectionForSlot(slot, selection.selectionId)
-        return selection
-      } catch (error) {
-        console.warn(
-          `[PlaygroundScene] Could not preload model for ${slot} -> ${selection.id} (${selection.form}):`,
-          error
-        )
-      }
-    }
-    throw new Error(`No loadable models found for slot ${slot}`)
   }
 
   private setSelectionForSlot(slot: PokemonSlot, selectionId?: string | null) {
@@ -818,14 +802,14 @@ export class PlaygroundScene extends Scene3D {
     root.rotation.y = config.orientationY
     this.third.scene.add(root)
 
-    // Calcular bounding box del modelo en su posición actual
+    // Calcular bounding box del modelo en su posici?n actual
     root.updateMatrixWorld(true)
     const box = new THREE.Box3().setFromObject(root)
 
     // Calcular altura del modelo
     const height = box.max.y - box.min.y
 
-    // Mover el root según el ancla especificado
+    // Mover el root seg?n el ancla especificado
     const offsetZ = config.anchorToBack ? (box.max.z - position.z) : (box.min.z - position.z)
     root.position.z -= offsetZ
 
@@ -843,13 +827,13 @@ export class PlaygroundScene extends Scene3D {
     this.currentSpeciesBySlot[slot] = species
     this.setSelectionForSlot(slot, selectionId ?? null)
 
-    // Si hay animación de caída, elevar el modelo primero
+    // Si hay animaci?n de ca?da, elevar el modelo primero
     if (withFallAnimation) {
       const fallHeight = 0.5 // Altura desde donde cae
       root.position.y += fallHeight
     }
 
-    // Ejecutar partículas y whitein simultáneamente
+    // Ejecutar part?culas y whitein simult?neamente
     const restorePromise = this.fx.restorePokemonAppearance(slot)
     this.fx.playSwapParticles(slot)
 
@@ -864,9 +848,9 @@ export class PlaygroundScene extends Scene3D {
     } else {
       this.playDefaultAnimation(slot)
     }
-    // Animación de caída si está habilitada
+    // Animaci?n de ca?da si est? habilitada
     if (withFallAnimation) {
-      // Esperar 500ms antes de iniciar la caída
+      // Esperar 500ms antes de iniciar la ca?da
       await new Promise<void>((resolve) => {
         this.time.delayedCall(200, resolve)
       })
@@ -891,8 +875,8 @@ export class PlaygroundScene extends Scene3D {
       this.tweens.addCounter({
         from: 0,
         to: 1,
-        duration: 600, // Duración de la caída
-        ease: 'Cubic.easeIn', // Aceleración como gravedad
+        duration: 600, // Duraci?n de la ca?da
+        ease: 'Cubic.easeIn', // Aceleraci?n como gravedad
         onUpdate: (tween) => {
           const t = Number(tween.getValue())
           actor.object.position.y = THREE.MathUtils.lerp(startY, targetY, t)
@@ -973,9 +957,9 @@ export class PlaygroundScene extends Scene3D {
       await this.waitForCameraTransitionToSettle()
       const newHeight = await this.precalculateModelHeight(species, slot)
       if (existing) {
-        // Crear partículas antes de desvanecer
+        // Crear part?culas antes de desvanecer
         if (!options?.skipImplode) {
-          this.fx.playSwapParticles(slot, true) // <- IMPLOSIÓN
+          this.fx.playSwapParticles(slot, true) // <- IMPLOSI?N
         }
 
         await this.fx.whitenAndShrinkPokemon(slot)
@@ -989,7 +973,7 @@ export class PlaygroundScene extends Scene3D {
 
       await this.waitForCameraTransitionToSettle()
 
-      await this.spawnPokemon(slot, species, true, this.currentVariantBySlot[slot], options?.selectionId) // true = con animación de caída
+      await this.spawnPokemon(slot, species, true, this.currentVariantBySlot[slot], options?.selectionId) // true = con animaci?n de ca?da
 
       this.registerAnimations()
     } catch (error) {
@@ -1813,13 +1797,13 @@ export class PlaygroundScene extends Scene3D {
       species => !alreadyLoaded.includes(species)
     )
 
-    console.log(`🔄 Precargando ${toPreload.length} modelos en segundo plano...`)
+    console.log(`?? Precargando ${toPreload.length} modelos en segundo plano...`)
 
     toPreload.forEach(species => {
       this.loadModel(species).then(() => {
-        console.log(`✅ Modelo ${species} precargado`)
+        console.log(`? Modelo ${species} precargado`)
       }).catch(err => {
-        console.error(`❌ Error precargando ${species}:`, err)
+        console.error(`? Error precargando ${species}:`, err)
       })
     })
   }
